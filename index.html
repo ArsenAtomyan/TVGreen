@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPTV Player</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ========== PAGE LOADER ========== -->
+  <div id="page-loader" class="page-loader">
+    <div class="loader-content">
+      <div class="loader-logo">📺</div>
+      <div class="loader-bars">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <span class="loader-label">Loading playlist…</span>
+    </div>
+  </div>
+
+  <!-- ========== SETUP SCREEN ========== -->
+  <div id="setup-screen" class="setup-screen hidden">
+    <div class="setup-card">
+      <div class="setup-logo">📺</div>
+      <h1>IPTV Player</h1>
+      <p>Enter your M3U playlist URL to get started.<br>It will be remembered for future sessions.</p>
+      <div class="setup-form">
+        <label class="setup-input-label">Playlist 1 (required)</label>
+        <input type="url" id="setup-url" placeholder="http://provider.com/playlist.m3u" autocomplete="off" />
+        <label class="setup-input-label">Playlist 2 <span class="optional-tag">optional</span></label>
+        <input type="url" id="setup-url2" placeholder="http://provider2.com/playlist.m3u" autocomplete="off" />
+        <button id="setup-btn">Load Channels</button>
+      </div>
+      <div class="setup-divider"><span>or</span></div>
+      <label class="upload-label" for="setup-upload">Upload M3U file from device</label>
+      <input type="file" id="setup-upload" accept=".m3u,.m3u8" />
+      <div id="setup-error" class="setup-error hidden"></div>
+    </div>
+  </div>
+
+  <!-- ========== MAIN APP ========== -->
+  <div id="app" class="app hidden">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Channels</span>
+        <input type="text" id="channel-search" placeholder="Search channels…" autocomplete="off" />
+      </div>
+      <div class="group-tabs-wrap">
+        <button class="group-arrow group-arrow-left hidden" id="group-arrow-left">&#8249;</button>
+        <div class="group-tabs" id="group-tabs"></div>
+        <button class="group-arrow group-arrow-right hidden" id="group-arrow-right">&#8250;</button>
+      </div>
+      <div class="channel-list" id="channel-list"></div>
+    </aside>
+
+    <!-- Player Area -->
+    <main class="player-area" id="player-area">
+      <video id="video" playsinline></video>
+
+      <!-- Channel Number Dial (OSD) -->
+      <div id="channel-dial" class="channel-dial hidden">
+        <div class="dial-inner">
+          <span class="dial-label">CH</span>
+          <span id="dial-number">—</span>
+          <span id="dial-name"></span>
+        </div>
+      </div>
+
+
+
+      <!-- Buffering Spinner -->
+      <div id="buffering" class="buffering hidden">
+        <div class="spinner-ring"></div>
+        <span id="buffer-label">Buffering…</span>
+      </div>
+
+      <!-- Top Bar -->
+      <div class="player-topbar" id="player-topbar">
+        <div class="topbar-left">
+          <span class="ch-badge-top" id="ch-badge-top">CH —</span>
+          <span class="now-playing-name" id="now-playing-name"></span>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn" id="settings-btn" title="Settings (S)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Controls -->
+      <div class="player-controls" id="player-controls">
+        <div class="controls-left">
+          <button class="ctrl-btn" id="prev-btn" title="Previous Channel">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button class="ctrl-btn play-btn" id="play-btn" title="Play / Pause">
+            <svg id="play-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <button class="ctrl-btn" id="stop-btn" title="Stop">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+          </button>
+          <button class="ctrl-btn" id="next-btn" title="Next Channel">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+          </button>
+          <div class="volume-wrap">
+            <button class="ctrl-btn" id="mute-btn" title="Mute">
+              <svg id="vol-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            </button>
+            <div class="volume-bar-wrap">
+              <input type="range" id="volume-slider" min="0" max="100" value="100" />
+            </div>
+          </div>
+        </div>
+
+        <div class="controls-center">
+          <span class="ch-badge" id="ch-badge">CH —</span>
+          <span class="ch-name-bar" id="ch-name-bar">No channel</span>
+        </div>
+
+        <div class="controls-right">
+          <button class="ctrl-btn" id="menu-btn" title="Toggle Channel List">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+          </button>
+          <button class="ctrl-btn" id="fullscreen-btn" title="Fullscreen">
+            <svg id="fs-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ========== SETTINGS MODAL ========== -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close-btn" id="modal-close">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="mtab active" data-tab="playlist">Playlist</button>
+        <button class="mtab" data-tab="channels">Channels</button>
+        <button class="mtab" data-tab="hotkeys">Hotkeys</button>
+        <button class="mtab" data-tab="buffer">Buffering</button>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- Playlist Tab -->
+        <div class="tab-pane active" id="tab-playlist">
+          <div class="form-group">
+            <label>Playlist 1 URL</label>
+            <input type="url" id="settings-url" placeholder="http://provider.com/playlist.m3u" />
+          </div>
+          <div class="form-group">
+            <label>Playlist 2 URL <span class="optional-tag">optional — channels continue after playlist 1</span></label>
+            <input type="url" id="settings-url2" placeholder="http://provider2.com/playlist.m3u" />
+          </div>
+          <button class="btn-primary" id="apply-url-btn">Apply &amp; Reload</button>
+          <div class="form-divider"><span>or upload file</span></div>
+          <div class="form-group">
+            <label>M3U File</label>
+            <label class="file-upload-label" for="upload-m3u">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+              Choose M3U file…
+            </label>
+            <input type="file" id="upload-m3u" accept=".m3u,.m3u8" />
+          </div>
+        </div>
+
+        <!-- Custom Channels Tab -->
+        <div class="tab-pane" id="tab-channels">
+          <p class="hint">Add individual channels that aren't in your playlist. They appear in the channel list at the position you specify. If the number is already taken, channels from that point are shifted up. Click ✏️ on an existing channel to edit it.</p>
+          <div class="custom-ch-form">
+            <div class="custom-ch-row">
+              <div class="form-group" style="flex:2">
+                <label>Channel Name</label>
+                <input type="text" id="cch-name" placeholder="e.g. CNN International" autocomplete="off" />
+              </div>
+              <div class="form-group" style="flex:1">
+                <label>Group <span class="optional-tag">optional</span></label>
+                <input type="text" id="cch-group" placeholder="e.g. News" autocomplete="off" />
+              </div>
+            </div>
+            <div class="custom-ch-row">
+              <div class="form-group" style="flex:3">
+                <label>Stream URL</label>
+                <input type="url" id="cch-url" placeholder="http://stream.example.com/channel.m3u8" autocomplete="off" />
+              </div>
+              <div class="form-group" style="flex:1">
+                <label>Channel # <span class="optional-tag">optional</span></label>
+                <input type="number" id="cch-number" placeholder="auto" min="1" autocomplete="off" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Logo URL <span class="optional-tag">optional</span></label>
+              <input type="url" id="cch-logo" placeholder="http://example.com/logo.png" autocomplete="off" />
+            </div>
+            <div class="cch-form-actions">
+              <button class="btn-primary" id="cch-add-btn">+ Add Channel</button>
+              <button class="btn-secondary hidden" id="cch-cancel-btn">✕ Cancel</button>
+            </div>
+            <div id="cch-error" class="setup-error hidden" style="margin-top:10px"></div>
+          </div>
+          <div class="form-divider"><span>added channels</span></div>
+          <div id="custom-ch-list" class="custom-ch-list"></div>
+        </div>
+
+        <!-- Hotkeys Tab -->
+        <div class="tab-pane" id="tab-hotkeys">
+          <p class="hint">Click a key badge, then press the new key. Press <kbd>Esc</kbd> to cancel. Number keys (0–9) are reserved for channel dialing.</p>
+          <div class="hotkey-list" id="hotkey-list"></div>
+          <button class="btn-secondary" id="reset-hotkeys-btn">Reset to Defaults</button>
+        </div>
+
+        <!-- Buffer Tab -->
+        <div class="tab-pane" id="tab-buffer">
+          <div class="form-group">
+            <label>Buffering Mode</label>
+            <select id="buffer-mode">
+              <option value="auto">Auto — Dynamic (recommended for slow connections)</option>
+              <option value="low">Low latency (fast connection, &gt;10 Mbps)</option>
+              <option value="medium">Medium (balanced, 2–10 Mbps)</option>
+              <option value="high">High pre-buffer (slow connection, &lt;2 Mbps)</option>
+            </select>
+            <p class="hint">Auto mode measures your real download speed on every segment and adjusts the buffer target automatically. It builds a larger cushion when your connection is slow to prevent freezing.</p>
+          </div>
+          <div class="buffer-stats-grid" id="buffer-stats">
+            <div class="bstat">
+              <span class="bstat-label">Estimated Speed</span>
+              <strong id="stat-speed">—</strong>
+            </div>
+            <div class="bstat">
+              <span class="bstat-label">Buffer Level</span>
+              <strong id="stat-buffer">—</strong>
+            </div>
+            <div class="bstat">
+              <span class="bstat-label">Current Quality</span>
+              <strong id="stat-quality">—</strong>
+            </div>
+            <div class="bstat">
+              <span class="bstat-label">Dropped Frames</span>
+              <strong id="stat-dropped">—</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+  <script src="m3u-parser.js"></script>
+  <script src="settings.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>
