@@ -106,6 +106,7 @@ const App = {
     this.setupControlButtons();
     this.setupKeyboard();
     this.setupOSD();
+    this.setupAudioTrackBtn();
 
     if (Settings.hasAnyUrl()) {
       this.loadAllPlaylists();
@@ -153,6 +154,11 @@ const App = {
       volumeSlider:  $('volume-slider'),
       chBadge:       $('ch-badge'),
       chNameBar:     $('ch-name-bar'),
+      audioTrackWrap:  $('audio-track-wrap'),
+      audioTrackBtn:   $('audio-track-btn'),
+      audioTrackCount: $('audio-track-count'),
+      audioTrackMenu:  $('audio-track-menu'),
+      audioTrackList:  $('audio-track-list'),
       menuBtn:       $('menu-btn'),
       fullscreenBtn: $('fullscreen-btn'),
       fsIcon:        $('fs-icon'),
@@ -180,6 +186,7 @@ const App = {
       statQuality:   $('stat-quality'),
       statDropped:   $('stat-dropped'),
       toast:         $('toast'),
+      navZoneHint:   $('nav-zone-hint'),
     };
   },
 
@@ -306,16 +313,37 @@ const App = {
     }
   },
 
-  /** Fetch a single M3U URL and return its text. */
+  /** Fetch a single M3U URL, falling back to a CORS proxy if needed. */
   async _fetchM3U(url) {
-    let response;
+    // 1st attempt — direct fetch
     try {
-      response = await fetch(url, { mode: 'cors' });
-    } catch (_) {
-      throw new Error('Could not fetch ' + url + '. Your provider may not allow cross-origin requests. Try downloading the M3U file and uploading it instead.');
+      const res = await fetch(url, { mode: 'cors' });
+      if (res.ok) return res.text();
+      throw new Error('HTTP ' + res.status);
+    } catch (directErr) {
+      // Direct failed (likely CORS) — try proxy
     }
-    if (!response.ok) throw new Error('Server returned HTTP ' + response.status + ' for ' + url);
-    return response.text();
+
+    // 2nd attempt — corsproxy.io (free, reliable, no sign-up needed)
+    const proxies = [
+      'https://corsproxy.io/?' + encodeURIComponent(url),
+      'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    ];
+
+    for (const proxyUrl of proxies) {
+      try {
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          console.info('[IPTV] Loaded via proxy:', proxyUrl.split('?')[0]);
+          return res.text();
+        }
+      } catch (_) {}
+    }
+
+    throw new Error(
+      'Could not fetch playlist "' + url + '".\n' +
+      'Direct and proxy attempts both failed. Try downloading the M3U file and uploading it instead.'
+    );
   },
 
   /**
@@ -434,6 +462,7 @@ const App = {
 
     this.el.channelList.querySelectorAll('.channel-item').forEach(item => {
       item.addEventListener('click', () => {
+        this._clearNavFocus();
         this.playChannel(parseInt(item.dataset.index, 10));
       });
     });
@@ -457,6 +486,7 @@ const App = {
     this.renderChannelItems();
     this.scrollActiveIntoView();
     localStorage.setItem('iptv_last_channel', index);
+    this._resetAudioTracks();
 
     // Destroy previous HLS instance cleanly
     if (this.hls) {
@@ -479,9 +509,11 @@ const App = {
     } else if (this.el.video.canPlayType('application/vnd.apple.mpegurl')) {
       this.el.video.src = ch.url;
       this._playMuted();
+      this._watchNativeAudioTracks();
     } else {
       this.el.video.src = ch.url;
       this._playMuted();
+      this._watchNativeAudioTracks();
     }
   },
 
@@ -549,11 +581,19 @@ const App = {
     // Re-assign sequential indices (numbers are preserved as-is)
     return merged.map((ch, i) => ({ ...ch, index: i }));
   },
+  _initialLoad: true,
+
+  /** Mutes only on the very first load. After that respects the user's mute state. */
   _playMuted() {
-    const v  = this.el.video;
-    v.muted  = true;
+    const v = this.el.video;
+    if (this._initialLoad) {
+      v.muted      = true;
+      this.isMuted = true;
+      this._initialLoad = false;
+    } else {
+      v.muted = this.isMuted;
+    }
     v.volume = this.volume;
-    this.isMuted = true;
     v.play().catch(() => {});
     this._updateVolumeUI();
   },
@@ -711,7 +751,159 @@ const App = {
       if (!this.el.video.paused) this.showBuffering(false);
     });
 
+    // ---- Audio track support ----
+    hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_evt, data) => {
+      this._onHlsAudioTracksUpdated(data.audioTracks || []);
+    });
+    hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (_evt, data) => {
+      this._renderAudioTrackList();
+    });
+
     return hls;
+  },
+
+  // ============================================================
+  //  Audio Track Support
+  // ============================================================
+
+  /** Set up the audio track button toggle and close-on-outside-click. */
+  setupAudioTrackBtn() {
+    this.el.audioTrackBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = !this.el.audioTrackMenu.classList.contains('hidden');
+      this._closeAudioMenu();
+      if (!isOpen) this._openAudioMenu();
+    });
+
+    // Close menu when clicking anywhere else
+    document.addEventListener('click', (e) => {
+      if (!this.el.audioTrackWrap.contains(e.target)) {
+        this._closeAudioMenu();
+      }
+    });
+  },
+
+  _openAudioMenu() {
+    this._renderAudioTrackList();
+    this.el.audioTrackMenu.classList.remove('hidden');
+    this.el.audioTrackBtn.classList.add('active');
+  },
+
+  _closeAudioMenu() {
+    this.el.audioTrackMenu.classList.add('hidden');
+    this.el.audioTrackBtn.classList.remove('active');
+  },
+
+  /** Called by HLS.js AUDIO_TRACKS_UPDATED event. */
+  _onHlsAudioTracksUpdated(tracks) {
+    if (tracks.length > 1) {
+      this.el.audioTrackWrap.classList.remove('hidden');
+      this.el.audioTrackCount.textContent = tracks.length;
+    } else {
+      this.el.audioTrackWrap.classList.add('hidden');
+      this._closeAudioMenu();
+    }
+  },
+
+  /** Watch native HTMLVideoElement audioTracks (Safari / native HLS). */
+  _watchNativeAudioTracks() {
+    const tracks = this.el.video.audioTracks;
+    if (!tracks) return;
+
+    const update = () => {
+      if (tracks.length > 1) {
+        this.el.audioTrackWrap.classList.remove('hidden');
+        this.el.audioTrackCount.textContent = tracks.length;
+        this._renderAudioTrackList();
+      } else {
+        this.el.audioTrackWrap.classList.add('hidden');
+        this._closeAudioMenu();
+      }
+    };
+
+    tracks.addEventListener('addtrack', update);
+    tracks.addEventListener('removetrack', update);
+    update();
+  },
+
+  /** Reset audio UI when switching to a new channel. */
+  _resetAudioTracks() {
+    this.el.audioTrackWrap.classList.add('hidden');
+    this.el.audioTrackCount.textContent = '';
+    this._closeAudioMenu();
+  },
+
+  /** Build the track list items inside the popup. */
+  _renderAudioTrackList() {
+    let items = [];
+
+    if (this.hls) {
+      // HLS.js mode
+      const tracks  = this.hls.audioTracks || [];
+      const current = this.hls.audioTrack;
+      items = tracks.map((t, i) => ({
+        index:   i,
+        label:   this._audioTrackLabel(t),
+        active:  i === current,
+      }));
+    } else {
+      // Native mode
+      const tracks = this.el.video.audioTracks;
+      if (!tracks) return;
+      for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i];
+        items.push({
+          index:  i,
+          label:  this._audioTrackLabel(t),
+          active: t.enabled,
+        });
+      }
+    }
+
+    this.el.audioTrackList.innerHTML = items.map(item => `
+      <button class="audio-track-item${item.active ? ' active' : ''}" data-index="${item.index}">
+        <svg class="audio-track-check" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+        </svg>
+        ${this._esc(item.label)}
+      </button>
+    `).join('');
+
+    this.el.audioTrackList.querySelectorAll('.audio-track-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._switchAudioTrack(parseInt(btn.dataset.index, 10));
+        this._closeAudioMenu();
+      });
+    });
+  },
+
+  /** Switch to the given audio track index. */
+  _switchAudioTrack(index) {
+    if (this.hls) {
+      this.hls.audioTrack = index;
+    } else {
+      const tracks = this.el.video.audioTracks;
+      if (!tracks) return;
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].enabled = (i === index);
+      }
+      this._renderAudioTrackList();
+    }
+
+    // Show toast with track name
+    const label = this.el.audioTrackList.querySelectorAll('.audio-track-item')[index]?.textContent?.trim();
+    if (label) this.showToast('🎧 ' + label);
+  },
+
+  /** Build a human-readable label for an audio track. */
+  _audioTrackLabel(track) {
+    if (!track) return 'Track';
+    const name = track.name || track.label || '';
+    const lang = track.lang || track.language || '';
+    if (name && lang && !name.toLowerCase().includes(lang.toLowerCase())) {
+      return name + ' (' + lang.toUpperCase() + ')';
+    }
+    return name || lang.toUpperCase() || 'Track';
   },
 
   _updateNowPlaying(ch) {
@@ -808,27 +1000,284 @@ const App = {
   },
 
   // ============================================================
-  //  Keyboard Handler
+  //  Keyboard Navigation System
+  //
+  //  Two navigation zones:
+  //    'controls' — the bottom button bar (←→ to move, Enter to activate)
+  //    'channels' — the sidebar channel list (↑↓ to move, Enter to play)
+  //
+  //  Tab cycles between zones.
+  //  Any hotkey action key exits navigation mode.
+  //  Digit keys always go to channel dial regardless of zone.
   // ============================================================
+
+  _navZone:       null,   // 'controls' | 'channels' | 'groups' | null
+  _navCtrlIndex:  -1,     // index into _getCtrlButtons()
+  _navChIndex:    -1,     // index into visible channel items
+  _navGroupIndex: -1,     // index into group tab buttons
+  _navZoneTimer:  null,
+
+  _getCtrlButtons() {
+    return Array.from(document.querySelectorAll('[data-nav="ctrl"]'))
+      .sort((a, b) =>
+        parseInt(a.dataset.navOrder || 99) - parseInt(b.dataset.navOrder || 99)
+      );
+  },
+
+  _getVisibleChannelItems() {
+    return Array.from(this.el.channelList.querySelectorAll('.channel-item'));
+  },
+
   setupKeyboard() {
     document.addEventListener('keydown', e => {
-      // Never intercept when user is typing in a form field
+      // Never intercept when typing in a form field
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      // Never intercept when settings modal is open (except Escape, handled there)
+      if (!this.el.settingsModal.classList.contains('hidden')) return;
 
-      // Digit keys → channel dial (0–9), no modifiers
+      // Digit keys → channel dial (always)
       if (e.key >= '0' && e.key <= '9' && !e.ctrlKey && !e.altKey && !e.metaKey) {
         e.preventDefault();
+        this._clearNavFocus();
         this.startDial(e.key);
         return;
       }
 
-      // Hotkey actions
+      // Arrow keys — navigation
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        this._showControls?.();
+        this._handleArrowNav(e.key);
+        return;
+      }
+
+      // Enter — activate focused element
+      if (e.key === 'Enter') {
+        if (this._navZone === 'controls' && this._navCtrlIndex >= 0) {
+          e.preventDefault();
+          this._getCtrlButtons()[this._navCtrlIndex]?.click();
+          return;
+        }
+        if (this._navZone === 'groups' && this._navGroupIndex >= 0) {
+          e.preventDefault();
+          this._getGroupTabs()[this._navGroupIndex]?.click();
+          return;
+        }
+        if (this._navZone === 'channels' && this._navChIndex >= 0) {
+          e.preventDefault();
+          const items = this._getVisibleChannelItems();
+          items[this._navChIndex]?.click();
+          return;
+        }
+        // Enter with no zone active — trigger play/pause
+        e.preventDefault();
+        this.togglePlayPause();
+        return;
+      }
+
+      // Tab — cycle between zones
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        this._cycleNavZone(e.shiftKey);
+        return;
+      }
+
+      // All other hotkey actions
       const action = Settings.getActionForKey(e.key);
       if (action) {
         e.preventDefault();
+        this._clearNavFocus();
         this._executeAction(action);
       }
     });
+
+    // Clicking anywhere on the player clears nav focus
+    this.el.app.addEventListener('mousedown', () => this._clearNavFocus());
+  },
+
+  _sidebarVisible() {
+    return !this.el.app.classList.contains('sidebar-hidden');
+  },
+
+  _handleArrowNav(key) {
+    const sidebarOpen = this._sidebarVisible();
+
+    // If no zone active, enter zone based on key direction
+    if (!this._navZone) {
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        this._enterZone('controls', key === 'ArrowLeft' ? 'last' : 'first');
+      } else if (key === 'ArrowDown') {
+        this._enterZone(sidebarOpen ? 'groups' : 'controls');
+      } else {
+        this._enterZone(sidebarOpen ? 'channels' : 'controls', 'last');
+      }
+      return;
+    }
+
+    if (this._navZone === 'controls') {
+      const btns = this._getCtrlButtons();
+      if (!btns.length) return;
+      if (key === 'ArrowLeft') {
+        this._navCtrlIndex = (this._navCtrlIndex - 1 + btns.length) % btns.length;
+        this._applyCtrlFocus();
+      } else if (key === 'ArrowRight') {
+        this._navCtrlIndex = (this._navCtrlIndex + 1) % btns.length;
+        this._applyCtrlFocus();
+      } else if (key === 'ArrowUp') {
+        if (sidebarOpen) this._enterZone('channels');
+        // if sidebar hidden, stay in controls — nothing above
+      } else if (key === 'ArrowDown') {
+        if (sidebarOpen) this._enterZone('groups');
+        // if sidebar hidden, stay in controls — nothing below
+      }
+      return;
+    }
+
+    if (this._navZone === 'groups') {
+      if (!sidebarOpen) { this._enterZone('controls'); return; }
+      const tabs = this._getGroupTabs();
+      if (!tabs.length) return;
+      if (key === 'ArrowLeft') {
+        this._navGroupIndex = (this._navGroupIndex - 1 + tabs.length) % tabs.length;
+        this._applyGroupFocus();
+      } else if (key === 'ArrowRight') {
+        this._navGroupIndex = (this._navGroupIndex + 1) % tabs.length;
+        this._applyGroupFocus();
+      } else if (key === 'ArrowDown') {
+        this._enterZone('channels', 'first');
+      } else if (key === 'ArrowUp') {
+        this._enterZone('controls', 'first');
+      }
+      return;
+    }
+
+    if (this._navZone === 'channels') {
+      if (!sidebarOpen) { this._enterZone('controls'); return; }
+      const items = this._getVisibleChannelItems();
+      if (!items.length) return;
+      if (key === 'ArrowUp') {
+        if (this._navChIndex <= 0) {
+          this._enterZone('groups');
+          return;
+        }
+        this._navChIndex--;
+        this._applyChFocus();
+      } else if (key === 'ArrowDown') {
+        if (this._navChIndex >= items.length - 1) {
+          this._enterZone('controls', 'first');
+          return;
+        }
+        this._navChIndex++;
+        this._applyChFocus();
+      } else if (key === 'ArrowLeft' || key === 'ArrowRight') {
+        this._enterZone('controls', key === 'ArrowLeft' ? 'last' : 'first');
+      }
+      return;
+    }
+  },
+
+  _getGroupTabs() {
+    return Array.from(this.el.groupTabs.querySelectorAll('.group-tab'));
+  },
+
+  _enterZone(zone, startPos = 'first') {
+    this._clearNavFocus();
+    this._navZone = zone;
+
+    if (zone === 'controls') {
+      const btns = this._getCtrlButtons();
+      this._navCtrlIndex = startPos === 'last' ? btns.length - 1 : 0;
+      this._applyCtrlFocus();
+      this._showNavHint('Controls');
+
+    } else if (zone === 'groups') {
+      const tabs = this._getGroupTabs();
+      if (!tabs.length) { this._enterZone('channels', 'first'); return; }
+      const activeIdx = tabs.findIndex(t => t.classList.contains('active'));
+      this._navGroupIndex = activeIdx >= 0 ? activeIdx : 0;
+      this._applyGroupFocus();
+      this._showNavHint('Groups');
+
+    } else { // channels
+      const items = this._getVisibleChannelItems();
+      if (!items.length) { this._navZone = null; return; }
+
+      // Always start at the currently playing channel if it's visible,
+      // otherwise fall back to top of the list
+      const playingIdx = items.findIndex(el =>
+        parseInt(el.dataset.index) === this.currentIndex
+      );
+      this._navChIndex = playingIdx >= 0 ? playingIdx : 0;
+
+      this._applyChFocus();
+      this._showNavHint('Channel List');
+    }
+  },
+
+  _cycleNavZone(reverse = false) {
+    const zones = ['controls', 'groups', 'channels'];
+    if (!this._navZone) {
+      this._enterZone(reverse ? zones[zones.length - 1] : zones[0]);
+      return;
+    }
+    const idx  = zones.indexOf(this._navZone);
+    const next = zones[(idx + (reverse ? -1 : 1) + zones.length) % zones.length];
+    this._enterZone(next);
+  },
+
+  _applyCtrlFocus() {
+    document.querySelectorAll('.ctrl-btn.kb-focus, .icon-btn.kb-focus').forEach(b => b.classList.remove('kb-focus'));
+    const btns = this._getCtrlButtons();
+    const btn  = btns[this._navCtrlIndex];
+    if (btn) {
+      btn.classList.add('kb-focus');
+      btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    this._showNavHint('Controls');
+  },
+
+  _applyGroupFocus() {
+    document.querySelectorAll('.group-tab.kb-focus').forEach(b => b.classList.remove('kb-focus'));
+    const tabs = this._getGroupTabs();
+    const tab  = tabs[this._navGroupIndex];
+    if (tab) {
+      tab.classList.add('kb-focus');
+      tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    this._showNavHint('Groups');
+  },
+
+  _applyChFocus() {
+    document.querySelectorAll('.channel-item.kb-focus').forEach(el => el.classList.remove('kb-focus'));
+    const items = this._getVisibleChannelItems();
+    const item  = items[this._navChIndex];
+    if (item) {
+      item.classList.add('kb-focus');
+      // Use 'auto' (instant) — smooth queues up when keys are held and looks broken
+      item.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    }
+    this._showNavHint('Channel List');
+  },
+
+  _clearNavFocus() {
+    this._navZone       = null;
+    this._navCtrlIndex  = -1;
+    this._navChIndex    = -1;
+    this._navGroupIndex = -1;
+    document.querySelectorAll('.ctrl-btn.kb-focus, .icon-btn.kb-focus, .channel-item.kb-focus, .group-tab.kb-focus')
+      .forEach(el => el.classList.remove('kb-focus'));
+    this._hideNavHint();
+  },
+
+  _navHintTimer: null,
+  _showNavHint(label) {
+    this.el.navZoneHint.textContent = label;
+    this.el.navZoneHint.classList.add('visible');
+    if (this._navHintTimer) clearTimeout(this._navHintTimer);
+    this._navHintTimer = setTimeout(() => this._hideNavHint(), 2000);
+  },
+  _hideNavHint() {
+    this.el.navZoneHint.classList.remove('visible');
   },
 
   _executeAction(action) {
@@ -978,14 +1427,29 @@ const App = {
     document.addEventListener('webkitfullscreenchange', () => this._onFullscreenChange());
   },
 
+  _sidebarBeforeFs: false, // was sidebar visible before entering fullscreen?
+
   _onFullscreenChange() {
     const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
     this.el.app.classList.toggle('fullscreen', isFs);
 
+    if (isFs) {
+      // Remember current sidebar state then hide it
+      this._sidebarBeforeFs = !this.el.app.classList.contains('sidebar-hidden');
+      this.el.app.classList.add('sidebar-hidden');
+    } else {
+      // Restore sidebar to what it was before fullscreen
+      this.el.app.classList.toggle('sidebar-hidden', !this._sidebarBeforeFs);
+      // If we're back in channel nav zone but sidebar is now hidden, clear nav
+      if (this._navZone === 'channels' || this._navZone === 'groups') {
+        if (this.el.app.classList.contains('sidebar-hidden')) this._clearNavFocus();
+      }
+    }
+
     // Swap fullscreen icon
     this.el.fsIcon.innerHTML = isFs
-      ? '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>' // exit
-      : '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>'; // enter
+      ? '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>'
+      : '<path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>';
   },
 
   // ============================================================
@@ -994,7 +1458,7 @@ const App = {
   setupOSD() {
     const area = this.el.app;
 
-    const showControls = () => {
+    this._showControls = () => {
       this.el.topbar.classList.add('visible');
       this.el.controls.classList.add('visible');
       document.body.style.cursor = '';
@@ -1011,21 +1475,25 @@ const App = {
       }
     };
 
-    area.addEventListener('mousemove',  showControls);
-    area.addEventListener('click',      showControls);
-    area.addEventListener('touchstart', showControls, { passive: true });
+    area.addEventListener('mousemove',  this._showControls);
+    area.addEventListener('click',      this._showControls);
+    area.addEventListener('touchstart', this._showControls, { passive: true });
 
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) {
-        // Exited fullscreen: always show controls
-        showControls();
-        document.body.style.cursor = '';
+      if (document.fullscreenElement) {
+        // Just entered fullscreen — start the hide timer
+        this._showControls();
+      } else {
+        // Exited fullscreen — show controls permanently (no timer)
         if (this.controlsTimer) clearTimeout(this.controlsTimer);
+        this.el.topbar.classList.add('visible');
+        this.el.controls.classList.add('visible');
+        document.body.style.cursor = '';
       }
     });
 
     // Show by default
-    showControls();
+    this._showControls();
   },
 
   // ============================================================
@@ -1138,10 +1606,48 @@ const App = {
       if (e.key === 'Enter') this.el.cchAddBtn.click();
     });
 
-    // Close on Escape
+    // ---- Settings modal keyboard navigation ----
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && !this.el.settingsModal.classList.contains('hidden')) {
+      if (this.el.settingsModal.classList.contains('hidden')) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
         this.closeSettings();
+        return;
+      }
+
+      // ←/→ switch tabs
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const tabs  = Array.from(document.querySelectorAll('.mtab'));
+        const cur   = tabs.findIndex(t => t.classList.contains('active'));
+        const next  = (cur + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        e.preventDefault();
+        tabs[next].click();
+        return;
+      }
+
+      // ↑/↓ move between focusable elements inside modal (including header buttons and tabs)
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        const focusable = Array.from(
+          document.querySelectorAll(
+            '#modal-close, .mtab, .tab-pane.active input, .tab-pane.active select, ' +
+            '.tab-pane.active button:not(.hidden), .tab-pane.active .key-badge, ' +
+            '.tab-pane.active .cch-play-btn, .tab-pane.active .cch-edit-btn, .tab-pane.active .cch-delete-btn'
+          )
+        ).filter(el => !el.disabled && el.offsetParent !== null);
+        if (!focusable.length) return;
+        e.preventDefault();
+        const cur  = focusable.indexOf(document.activeElement);
+        const next = (cur + (e.key === 'ArrowDown' ? 1 : -1) + focusable.length) % focusable.length;
+        focusable[next].focus();
+        return;
+      }
+
+      // Enter activates the focused element (buttons already fire on Enter natively,
+      // but we handle it here to avoid double-fire on non-button elements)
+      if (e.key === 'Enter' && document.activeElement?.tagName === 'BUTTON') {
+        // Let the native button click handle it
+        return;
       }
     });
   },

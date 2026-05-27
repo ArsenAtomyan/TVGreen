@@ -377,6 +377,13 @@ button:active { transform: scale(0.97); }
   cursor: pointer;
 }
 .group-tab:hover { color: var(--text); border-color: var(--accent); }
+.group-tab.kb-focus {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .group-tab.active {
   background: var(--accent-dim);
   border-color: var(--accent);
@@ -705,6 +712,54 @@ input[type="range"]::-moz-range-thumb {
   text-overflow: ellipsis;
   min-height: 18px; /* keeps layout stable when empty during dial */
 }
+
+/* ============================================================
+   KEYBOARD NAVIGATION FOCUS RINGS
+   ============================================================ */
+
+/* Hide default browser outline — we handle our own */
+:focus { outline: none; }
+
+/* Control bar buttons */
+.ctrl-btn:focus-visible,
+.ctrl-btn.kb-focus,
+.icon-btn:focus-visible,
+.icon-btn.kb-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+/* Channel list items */
+.channel-item.kb-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+
+/* Focus zone indicator — subtle label showing which zone is active */
+.nav-zone-hint {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.75);
+  border: 1px solid var(--border-bright);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 11px;
+  font-family: var(--font-display);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 50;
+  white-space: nowrap;
+}
+.nav-zone-hint.visible { opacity: 1; }
 
 /* ============================================================
    BUFFERING INDICATOR
@@ -1160,6 +1215,26 @@ input[type="range"]::-moz-range-thumb {
 }
 .cch-delete-btn:hover { background: rgba(255,68,85,0.2); }
 
+/* Settings modal keyboard focus */
+.modal-box input:focus,
+.modal-box select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.modal-box button:focus-visible,
+.key-badge:focus-visible,
+.cch-play-btn:focus-visible,
+.cch-edit-btn:focus-visible,
+.cch-delete-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-dim);
+}
+.mtab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 /* ============================================================
    PAGE LOADER
    ============================================================ */
@@ -1228,6 +1303,123 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+/* ============================================================
+   AUDIO TRACK BUTTON & MENU
+   ============================================================ */
+.audio-track-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#audio-track-btn {
+  position: relative;
+}
+
+#audio-track-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.audio-track-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background: var(--accent);
+  color: #000;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  pointer-events: none;
+}
+
+.audio-track-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: rgba(13, 13, 26, 0.97);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  min-width: 190px;
+  max-width: 260px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7),
+              0 0 0 1px rgba(0,200,255,0.07);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  z-index: 50;
+  animation: audio-menu-in 0.15s ease;
+}
+
+@keyframes audio-menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.audio-track-menu-header {
+  padding: 9px 14px 7px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.audio-track-list {
+  padding: 5px 0;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-bright) transparent;
+}
+
+.audio-track-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-track-item:hover {
+  background: var(--surface3);
+  color: var(--accent);
+}
+
+.audio-track-item.active {
+  color: var(--accent);
+}
+
+.audio-track-check {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.audio-track-item.active .audio-track-check {
+  opacity: 1;
 }
 
 /* ============================================================

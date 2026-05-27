@@ -11,15 +11,15 @@
 // Keys are KeyboardEvent.key values.
 // ============================================================
 const DEFAULT_HOTKEYS = {
-  nextChannel:  { key: 'ArrowUp',    label: 'Next Channel' },
-  prevChannel:  { key: 'ArrowDown',  label: 'Previous Channel' },
+  nextChannel:  { key: 'PageDown',   label: 'Next Channel' },
+  prevChannel:  { key: 'PageUp',     label: 'Previous Channel' },
   playPause:    { key: ' ',          label: 'Play / Pause' },
   stop:         { key: 's',          label: 'Stop' },
   fullscreen:   { key: 'f',          label: 'Fullscreen' },
   channelMenu:  { key: 'c',          label: 'Toggle Channel List' },
   mute:         { key: 'm',          label: 'Mute / Unmute' },
-  volumeUp:     { key: 'ArrowRight', label: 'Volume Up (+10%)' },
-  volumeDown:   { key: 'ArrowLeft',  label: 'Volume Down (−10%)' },
+  volumeUp:     { key: '+',          label: 'Volume Up (+10%)' },
+  volumeDown:   { key: '-',          label: 'Volume Down (−10%)' },
 };
 
 const STORAGE_KEY = 'iptv_player_settings_v3';
